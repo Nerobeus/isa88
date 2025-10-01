@@ -1,0 +1,289 @@
+html,
+body {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  font-family: system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Arial;
+  overflow: hidden;
+}
+
+/* =========================
+   Header + barre d’outils
+   ========================= */
+.app-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 16px;
+  background: #0f172a;
+  color: #fff;
+}
+
+.toolbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.btn {
+  display: inline-block;
+  padding: 8px 14px;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  background: #f1f5f9;
+  cursor: pointer;
+  font-size: 0.9rem;
+  font-weight: 500;
+  transition: background 0.2s;
+  color: black;
+}
+
+.btn:hover {
+  background: #e2e8f0;
+}
+
+input[type="file"] {
+  display: none;
+}
+
+.muted {
+  color: #cbd5e1;
+}
+
+.status {
+  margin-top: 2px;
+  color: #22c55e;
+  font-size: 0.9em;
+}
+
+/* =========================
+   Tabs navigation
+   ========================= */
+.tabs {
+  display: flex;
+  background: #1e293b;
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
+
+.tab {
+  flex: 1;
+  padding: 10px;
+  border: none;
+  background: transparent;
+  color: #cbd5e1;
+  cursor: pointer;
+  font-size: 0.95rem;
+}
+
+.tab.active {
+  color: #fff;
+  border-bottom: 3px solid #22c55e;
+}
+
+.tab.tab-alerts.active {
+  border-bottom-color: #f97316;
+}
+
+/* =========================
+   Layout principal
+   ========================= */
+main {
+  height: calc(100vh - 96px);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.tab-panel {
+  display: none;
+  flex: 1;
+  min-height: 0;
+  padding: 12px;
+  box-sizing: border-box;
+}
+
+.tab-panel.active {
+  display: flex;
+  flex-direction: column;
+}
+
+.tab-panel-inner {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+/* =========================
+   Cartes
+   ========================= */
+.card {
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  padding: 12px;
+  margin-bottom: 16px;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.04);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* =========================
+   Tag names
+   ========================= */
+#tab-excel .card {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+#excel-tree {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+}
+
+.tree {
+  font-family: ui-monospace, Consolas, monospace;
+}
+
+.em-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 700;
+  padding: 6px 10px;
+  border-radius: 8px;
+}
+
+/* =========================
+   P&ID
+   ========================= */
+.layout-pid {
+  display: grid;
+  grid-template-columns: 340px 1fr;
+  gap: 12px;
+  height: 100%;
+}
+
+.layout-pid .side,
+.layout-pid .main {
+  height: 100%;
+  overflow: hidden;
+}
+
+.canvas-wrap {
+  position: relative;
+  overflow: hidden;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  flex: 1;
+  background: #fff;
+  /* pour éviter que le navigateur intercepte les gestures de zoom/pan */
+  touch-action: none;
+}
+
+#pid-canvas {
+  display: block;
+  max-width: 100%;
+  height: auto;
+}
+
+/* Overlay P&ID */
+#pidOverlayCanvas {
+  position: absolute;
+  inset: 0;
+  pointer-events: none; /* events gérés côté service si besoin */
+}
+
+#pidHitCanvas {
+  position: absolute;
+  inset: 0;
+  pointer-events: auto;
+  background: transparent;
+}
+
+/* =========================
+   Instances
+   ========================= */
+.layout-instances {
+  display: grid;
+  grid-template-columns: 50% 1fr;
+  gap: 12px;
+  height: 100%;
+}
+
+.layout-instances .side,
+.layout-instances .main {
+  height: 100%;
+  overflow: hidden;
+}
+
+/* zone canvas = conteneur fixe comme PID */
+#tab-instances .main .canvas-wrap {
+  position: relative;
+  overflow: hidden;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  flex: 1;
+  background: #fff;
+  touch-action: none; /* important pour zoom/pan */
+  width: 100%;
+  height: 100%;
+}
+
+/* base PDF */
+#instance-canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+  background: #fff;
+}
+
+/* Overlay Instances */
+#instanceOverlayCanvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+  /* pointer-events: none; /* évite de bloquer la souris par défaut */ */
+}
+
+
+/* Résultats table */
+#results-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.9rem;
+}
+
+#results-table th,
+#results-table td {
+  border: 1px solid #e2e8f0;
+  padding: 4px 6px;
+  text-align: left;
+}
+
+/* =========================
+   Alertes
+   ========================= */
+.card-alerts {
+  border-color: #fdba74;
+  box-shadow: 0 2px 8px rgba(249, 115, 22, 0.15);
+}
+
+.cm-hover {
+  background: #fee2e2; /* rouge clair */
+  border-radius: 4px;
+}
+

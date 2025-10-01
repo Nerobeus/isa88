@@ -1,0 +1,23 @@
+/* cm.css — Styles pour le tableau des CM détectés */
+.cm-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-family: Arial, sans-serif;
+  font-size: 0.9em;
+}
+
+.cm-table th {
+  background-color: #f2f2f2;
+  text-align: left;
+  padding: 6px;
+  border-bottom: 2px solid #ccc;
+}
+
+.cm-table td {
+  padding: 6px;
+  border-bottom: 1px solid #ddd;
+}
+
+.cm-table tr:hover {
+  background-color: #f9f9f9;
+}

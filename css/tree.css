@@ -1,0 +1,24 @@
+/* tree.css — Styles pour l’arborescence EM → CM */
+.tree-root {
+  list-style-type: none;
+  padding-left: 1rem;
+  font-family: monospace;
+}
+
+.tree-root > li {
+  margin-bottom: 0.5rem;
+}
+
+.tree-root strong {
+  color: var(--em-color, #2a7);
+}
+
+.tree-root ul {
+  list-style-type: disc;
+  padding-left: 1.5rem;
+}
+
+.tree-root li li {
+  font-size: 0.9em;
+  color: #444;
+}

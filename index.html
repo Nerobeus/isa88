@@ -1,0 +1,143 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>EMCM — MVP v7 (compact)</title>
+  <link rel="stylesheet" href="css/style.css"/>
+
+  <!-- pdf.js -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.worker.min.js"></script>
+</head>
+<body>
+<header class="app-header">
+  <h1>Catalogue ISA-88 — MVP</h1>
+  <div class="toolbar">
+    <!-- Import Excel -->
+    <input type="file" id="excel-file" accept=".xlsx,.xls"/>
+    <label for="excel-file" class="btn">Importer Excel</label>
+    <span id="excel-filename" class="muted"></span>
+    <div id="excel-status" class="status"></div>
+
+    <!-- Import P&ID -->
+    <input type="file" id="pid-file" accept="application/pdf"/>
+    <label for="pid-file" class="btn">Importer P&ID</label>
+    <span id="pid-filename" class="muted"></span>
+    <button id="reset-zoom" class="btn">Réinitialiser vue</button>
+
+    <!-- Import Instances -->
+    <input type="file" id="pdf-file" accept="application/pdf"/>
+    <label for="pdf-file" class="btn">Importer Instances</label>
+    <span id="pdf-filename" class="muted"></span>
+    <div id="pdf-status" class="status"></div>
+  </div>
+</header>
+
+<nav class="tabs">
+  <button class="tab active" data-target="#tab-excel">Tag names</button>
+  <button class="tab" data-target="#tab-pid">P&ID</button>
+  <button class="tab" data-target="#tab-instances">Instances</button>
+  <button class="tab tab-alerts" data-target="#tab-alerts">Alertes</button>
+</nav>
+
+<main>
+  <!-- Tag names -->
+  <section id="tab-excel" class="tab-panel active">
+    <div class="card">
+      <h3>Tag names — Arborescence</h3>
+      <div id="excel-tree" class="tree"></div>
+    </div>
+  </section>
+
+  <!-- P&ID -->
+  <section id="tab-pid" class="tab-panel">
+    <div class="tab-panel-inner">
+      <div class="layout-pid">
+        <aside class="card side">
+          <h3>EM / Instances (PID courant)</h3>
+          <div id="pid-tree" class="tree"></div>
+        </aside>
+        <div class="card main">
+          <div class="canvas-wrap">
+            <canvas id="pid-canvas"></canvas>
+            <canvas id="pidOverlayCanvas"></canvas>
+          </div>
+          <div id="pid-status" class="status"></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Instances -->
+  <section id="tab-instances" class="tab-panel">
+    <div class="tab-panel-inner">
+      <div class="layout-instances">
+        <aside class="card side">
+          <h3>Résultats variants</h3>
+          <table id="results-table">
+            <thead>
+              <tr>
+                <th>Variant ID</th>
+                <th>Miniature</th>
+                <th>Éléments validés</th>
+                <th>Alertes</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </aside>
+        <div class="card main">
+          <h3>Aperçu PDF (variants multi-pages)</h3>
+          <!-- ✅ Ajout navigation -->
+          <div class="canvas-controls">
+            <button id="btn-prev-page">◀ Page précédente</button>
+            <button id="btn-next-page">Page suivante ▶</button>
+          </div>
+          <div class="canvas-wrap">
+            <canvas id="instance-canvas"></canvas>
+            <canvas id="instanceOverlayCanvas"></canvas>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Alertes -->
+  <section id="tab-alerts" class="tab-panel">
+    <div class="tab-panel-inner">
+      <div class="card card-alerts">
+        <h3>Alertes de cohérence</h3>
+        <table id="alerts-table">
+          <thead>
+            <tr>
+              <th>⚠</th><th>Source</th><th>EM_ID</th><th>Contexte</th><th>Détails</th><th>Type</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+</main>
+
+<footer class="app-footer"><small>MVP v7</small></footer>
+
+<!-- Librairies externes -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+
+<!-- Services internes -->
+<script src="js/color_service.js"></script>
+<script src="js/db_service.js"></script>
+<script src="js/excel_service.js"></script>
+<script src="js/pid_overlay.js"></script>
+<script src="js/pid_service.js"></script>
+<script src="js/instances_overlay.js"></script>
+<script src="js/instances_service.js"></script>
+<script src="js/ui_tree.js"></script>
+<script src="js/ui_table.js"></script>
+
+<!-- Orchestrateur principal -->
+<script src="js/main.js"></script>
+</body>
+</html>
