@@ -1,11 +1,11 @@
-// instances_overlay.js — gestion du rendu PDF + overlay pour les Instances
+// instances_overlay.js — gestion du rendu PDF + overlay pour les Instances (corrigé minimal)
 (function (global) {
   const InstancesOverlay = {
     pdfDoc: null,
-    file: null,          // conserve le fichier ouvert
+    file: null,
     pageNum: 1,
     variants: [],
-    items: [],           // ✅ nouveau : toutes les autres lignes (CMs, setpoints, alarms…)
+    items: [],
     scale: 1,
     dx: 0,
     dy: 0,
@@ -17,7 +17,6 @@
     lastY: 0,
     eventsBound: false,
 
-    // Prépare contexts + events + navigation
     async init(file, variants, items = [], startPage = 1) {
       this.file = file;
       this.pdfDoc = await pdfjsLib.getDocument(await file.arrayBuffer()).promise;
@@ -38,9 +37,9 @@
       this.ctx = canvas.getContext("2d");
       this.overlayCtx = overlay.getContext("2d");
 
-      this.bindNavButtons();   // navigation
-      this.bindEvents(wrap);   // wheel/drag
-      this.resize();           // fixe tailles + 1er render
+      this.bindNavButtons();
+      this.bindEvents(wrap);
+      this.resize();
     },
 
     async render(file, pageNum, variants, items = []) {
@@ -64,8 +63,8 @@
       this.ctx = canvas.getContext("2d");
       this.overlayCtx = overlay.getContext("2d");
 
-      this.bindNavButtons();   // ✅ ajouté aussi ici
-      this.resize();           // initialise les dimensions et déclenche renderPage()
+      this.bindNavButtons();
+      this.resize();
       this.bindEvents(wrap);
 
       await this.renderPage();
@@ -76,87 +75,78 @@
       if (!this.pdfDoc || !this.ctx) return;
 
       const page = await this.pdfDoc.getPage(this.pageNum);
-
-      // Effacer le canvas avant chaque rendu
       this.ctx.clearRect(0, 0, this.ctx.canvas.width, this.ctx.canvas.height);
 
-      // Viewport PDF.js
       const viewport = page.getViewport({ scale: this.scale });
       this.viewport = viewport;
 
       const renderContext = {
         canvasContext: this.ctx,
-        viewport: viewport,
+        viewport,
         transform: [1, 0, 0, 1, this.dx, this.dy],
       };
 
       await page.render(renderContext).promise;
-
-      // Rendu overlay
       this.drawOverlay();
     },
 
-    // Applique une matrice de transformation PDF.js
-    applyTransform(pt, m) {
-      return {
-        x: m[0] * pt.x + m[2] * pt.y + m[4],
-        y: m[1] * pt.x + m[3] * pt.y + m[5],
-      };
-    },
-
+    // --- correction principale : respect viewport + translation ---
     drawOverlay() {
       if (!this.overlayCtx || !this.viewport) return;
       const ctx = this.overlayCtx;
       const { width, height } = ctx.canvas;
-
-      // Nettoyer l’overlay
       ctx.clearRect(0, 0, width, height);
 
-      const transform = this.viewport.transform;
+      // appliquer le même transform que le PDF
+      const [a, b, c, d, e, f] = this.viewport.transform;
+      ctx.setTransform(a, b, c, d, e + this.dx, f + this.dy);
 
-      // --- Dessin des variants ---
+      // --- Variants ---
       this.variants
         .filter(v => v.page === this.pageNum && v.bbox)
-        .forEach((v, idx) => this.drawBox(ctx, transform, v, idx, "variant"));
+        .forEach((v, idx) => this.drawBox(ctx, v, idx, "variant"));
 
-      // --- Dessin des autres items (CMs, setpoints, alarms…) ---
+      // --- Autres items ---
       this.items
         .filter(it => it.page === this.pageNum && it.bbox)
-        .forEach((it, idx) => this.drawBox(ctx, transform, it, idx, it.source || "item"));
+        .forEach((it, idx) => this.drawBox(ctx, it, idx, it.source || "item"));
+
+      // reset transform
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
     },
 
-    drawBox(ctx, transform, obj, idx, type = "item") {
+    drawBox(ctx, obj, idx, type = "item") {
       const { x, y, w, h } = obj.bbox;
-      const p1 = this.applyTransform({ x, y }, transform);
-      const p2 = this.applyTransform({ x: x + w, y: y + h }, transform);
-
-      const rx = Math.min(p1.x, p2.x) + this.dx;
-      const ry = Math.min(p1.y, p2.y) + this.dy;
-      const rw = Math.abs(p2.x - p1.x);
-      const rh = Math.abs(p2.y - p1.y);
+      if (x == null || y == null) return;
 
       // Couleurs par type
       let hue;
       if (type === "variant") hue = (idx * 47) % 360;
-      else if (type === "control") hue = 200;       // bleu
-      else if (type === "measure") hue = 120;       // vert
-      else if (type === "characteristics") hue = 45; // jaune
-      else if (type === "alarm") hue = 0;           // rouge
-      else hue = (idx * 23) % 360;                  // fallback
+      else if (type === "control") hue = 200;
+      else if (type === "measure") hue = 120;
+      else if (type === "characteristics") hue = 45;
+      else if (type === "alarm") hue = 0;
+      else hue = (idx * 23) % 360;
 
       ctx.strokeStyle = `hsl(${hue}, 80%, 50%)`;
-      ctx.fillStyle = `hsla(${hue}, 80%, 50%, 0.1)`;
+      ctx.fillStyle = `hsla(${hue}, 80%, 50%, 0.15)`;
+      ctx.lineWidth = 1.5;
 
-      ctx.lineWidth = 2;
-      ctx.fillRect(rx, ry, rw, rh);
-      ctx.strokeRect(rx, ry, rw, rh);
+      ctx.beginPath();
+      ctx.rect(x, y, w, h);
+      ctx.fill();
+      ctx.stroke();
 
-      ctx.fillStyle = `hsl(${hue}, 80%, 40%)`;
-      ctx.font = "12px Arial";
-
-      const label = obj.variantId ? ("V" + obj.variantId) :
-                    obj.roleName || obj.name || obj.tag || obj.id || `#${idx+1}`;
-      ctx.fillText(label, rx + 4, ry + 14);
+      // Label
+      ctx.fillStyle = `hsl(${hue}, 80%, 35%)`;
+      ctx.font = "11px Arial";
+      const label =
+        obj.variantId ? `V${obj.variantId}` :
+        obj.roleName || obj.name || obj.tag || obj.id || `#${idx + 1}`;
+      ctx.save();
+      ctx.scale(1, -1); // inverse l’axe Y
+      ctx.fillText(label, x + 3, -(y - 10)); // y négatif car on a inversé
+      ctx.restore();
     },
 
     resize() {
@@ -172,8 +162,7 @@
       overlay.height = rect.height;
 
       console.log("[InstancesOverlay] resize →", rect.width, "x", rect.height);
-
-      this.renderPage(); // redraw avec les nouvelles dimensions
+      this.renderPage();
     },
 
     bindEvents(wrap) {
@@ -183,7 +172,7 @@
       wrap.addEventListener("wheel", (e) => {
         e.preventDefault();
         const delta = e.deltaY > 0 ? 0.9 : 1.1;
-        this.scale *= delta;
+        this.scale = Math.min(6, Math.max(0.3, this.scale * delta));
         this.renderPage();
       });
 
@@ -193,13 +182,8 @@
         this.lastY = e.clientY;
       });
 
-      wrap.addEventListener("mouseup", () => {
-        this.isDragging = false;
-      });
-
-      wrap.addEventListener("mouseleave", () => {
-        this.isDragging = false;
-      });
+      wrap.addEventListener("mouseup", () => (this.isDragging = false));
+      wrap.addEventListener("mouseleave", () => (this.isDragging = false));
 
       wrap.addEventListener("mousemove", (e) => {
         if (!this.isDragging) return;
@@ -220,14 +204,18 @@
         prev.onclick = () => {
           if (this.pageNum > 1) {
             this.pageNum--;
-            this.dx = 0; this.dy = 0; this.scale = 1;
+            this.dx = 0;
+            this.dy = 0;
+            this.scale = 1;
             this.renderPage();
           }
         };
         next.onclick = () => {
           if (this.pageNum < this.pdfDoc.numPages) {
             this.pageNum++;
-            this.dx = 0; this.dy = 0; this.scale = 1;
+            this.dx = 0;
+            this.dy = 0;
+            this.scale = 1;
             this.renderPage();
           }
         };

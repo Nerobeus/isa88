@@ -1,4 +1,4 @@
-// main.js — Orchestrateur principal (v9 corrigé)
+// main.js — Orchestrateur principal (v12 corrigé)
 console.log("[App] Initialisation");
 
 // Petit helper statut avec auto-clear
@@ -200,21 +200,45 @@ function initInstances() {
       const emId = emSelect.value;
       if (!emId) return;
 
-      const entry = InstanceService.fileMap.get(emId);
+      let entry = InstanceService.fileMap.get(emId);
       if (!entry) {
-        console.warn("[Instances] EM non présent en mémoire:", emId);
+        console.log("[Instances] EM non présent en mémoire → tentative reload DB:", emId);
+        entry = await InstanceService.loadPdfFromDb(emId);
+      }
+      if (!entry) {
+        console.warn("[Instances] PDF introuvable pour EM", emId);
         return;
       }
 
       console.log("[Instances] Changement sélection EM:", emId);
 
+      // 🔹 PATCH overlay variants from control_data (structure imbriquée)
+      let variants = entry.variants || [];
+      if ((!variants || !variants.length) && window.DBService) {
+        const allData = await DBService.getAll("control_data");
+        const found = allData.find(
+          d =>
+            d.emId === emId ||
+            d.id === emId ||
+            d.file === `${emId}.pdf` ||
+            (d.title && d.title.includes(emId))
+        );
+
+        if (found && found.types && found.types.variants) {
+          variants = found.types.variants;
+          console.log(`[Instances] ${variants.length} variants récupérés depuis control_data pour`, emId);
+        } else {
+          console.warn("[Instances] Aucun variants trouvé pour", emId);
+        }
+      }
+
       if (window.InstancesOverlay?.render && entry.file) {
-        await InstancesOverlay.render(entry.file, entry.pageNum, entry.variants);
+        await InstancesOverlay.render(entry.file, entry.pageNum, variants);
       } else {
         console.warn("[Instances] PDF non dispo pour EM", emId);
       }
 
-      if (window.renderResults) renderResults(entry.variants);
+      if (window.renderResults) renderResults(variants);
     });
   }
 }
@@ -266,11 +290,8 @@ async function populateInstancesSelectFromDB() {
     const emId = inst.ref || "0000";
     const title = inst.title || inst.ref || "UNKNOWN";
 
-    let fileBlob = null;
-    if (inst.pdfData) fileBlob = new Blob([inst.pdfData], { type: "application/pdf" });
-
     InstanceService.fileMap.set(emId, {
-      file: fileBlob,
+      file: inst.pdfBlob || null,
       pageNum: inst.pageNum || 1,
       variants: inst.variants || [],
       title

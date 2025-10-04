@@ -1,6 +1,6 @@
 // instances_service.js — Importation des PDF d’analyses fonctionnelles
-// v18 — centralisation control_data + alert_service + documents sans variants
-console.log("[Instances] service chargé (v18)");
+// v20 — centralisation control_data + alert_service + documents avec pdfBlob + reload depuis IndexedDB
+console.log("[Instances] service chargé (v20)");
 
 (function (global) {
   const InstanceService = {
@@ -60,6 +60,17 @@ console.log("[Instances] service chargé (v18)");
         console.warn("[Instances] Aucune vraie table de variants détectée");
         const emptyRecord = buildControlDataRecord(file, finalEmId, finalEmTitle, revision, { variants: [] });
         await DBService.put("control_data", emptyRecord);
+
+        // Sauvegarde document avec PDF
+        await persistDocument({
+          emId: finalEmId,
+          title: finalEmTitle,
+          filename: file.name,
+          revision,
+          pageNum: 1,
+          pdfData
+        });
+
         this.lastResult = emptyRecord;
         return this.lastResult;
       }
@@ -70,13 +81,14 @@ console.log("[Instances] service chargé (v18)");
       );
       console.log("[Instances] Variants extraits:", variants.length);
 
-      // --- Sauvegarde document (métadonnées uniquement) ---
+      // --- Sauvegarde document (avec pdfBlob) ---
       await persistDocument({
         emId: finalEmId,
         title: finalEmTitle,
         filename: file.name,
         revision,
-        pageNum: foundPageNum
+        pageNum: foundPageNum,
+        pdfData
       });
 
       // --- Extraction autres sections ---
@@ -93,7 +105,7 @@ console.log("[Instances] service chargé (v18)");
       await DBService.put("control_data", record);
       console.log("[Instances] control_data sauvegardé:", record);
 
-      // --- Mémorisation ---
+      // --- Mémorisation (en mémoire) ---
       const blob = new Blob([pdfData], { type: "application/pdf" });
       this.fileMap.set(finalEmId, { file: blob, pdfData, variants, pageNum: foundPageNum, title: finalEmTitle });
       this.lastResult = record;
@@ -104,15 +116,52 @@ console.log("[Instances] service chargé (v18)");
 
       // --- Affichage UI ---
       if (global.UITable) {
-        const parsedPages = Object.entries(record.types).map(([type, rows]) => ({
-          pageNum: foundPageNum,
-          type,
-          rows: rows || []
-        }));
-        UITable.renderAnalysisTables(parsedPages);
-      }
+      const parsedPages = [];
+
+      const types = this.lastResult?.types || {};
+      Object.entries(types).forEach(([key, arr]) => {
+        if (Array.isArray(arr) && arr.length) {
+          parsedPages.push({
+            type: key,
+            rows: arr,
+            pageNum: arr[0]?.page || 0
+          });
+        }
+      });
+
+      UITable.renderAnalysisTables(parsedPages);
+    }
 
       return this.lastResult;
+    },
+
+    // --- Nouvelle API pour recharger un PDF depuis IndexedDB ---
+    async loadPdfFromDb(emId) {
+      const docId = `instance_${emId}`;
+      const doc = await DBService.get("documents", docId);
+      if (!doc) {
+        console.warn("[Instances] Aucun document trouvé pour", emId);
+        return null;
+      }
+      if (!doc.pdfBlob) {
+        console.warn("[Instances] Pas de pdfBlob stocké pour", emId);
+        return null;
+      }
+
+      const arrayBuffer = await doc.pdfBlob.arrayBuffer();
+      const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+
+      const fileObj = {
+        file: doc.pdfBlob,
+        pdfData: arrayBuffer,
+        variants: (doc.types && doc.types.variants) || [],
+        pageNum: doc.pageNum,
+        title: doc.title
+      };
+
+      this.fileMap.set(emId, fileObj);
+      console.log("[Instances] PDF rechargé depuis IndexedDB pour", emId);
+      return fileObj;
     }
   };
 
@@ -190,8 +239,8 @@ console.log("[Instances] service chargé (v18)");
     return out;
   }
 
-  // --- Persistance document (métadonnées uniquement) ---
-  async function persistDocument({ emId, title, filename, revision, pageNum }) {
+  // --- Persistance document (avec pdfBlob) ---
+  async function persistDocument({ emId, title, filename, revision, pageNum, pdfData }) {
     const docId = `instance_${emId}`;
     const docRecord = {
       id: docId,
@@ -201,7 +250,8 @@ console.log("[Instances] service chargé (v18)");
       filename,
       revision,
       pageNum,
-      date: new Date().toISOString()
+      date: new Date().toISOString(),
+      pdfBlob: new Blob([pdfData], { type: "application/pdf" })
     };
     await DBService.put("documents", docRecord);
   }
