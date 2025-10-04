@@ -219,69 +219,63 @@ console.log("[Instances] service chargé (v13)");
     return null;
   }
 // --- Détection EM / EMT avec support FDS et resolveCandidate ---
-  async function detectEmId(pdf, file) {
+async function detectEmId(pdf, file) {
+  let tag = null;
+
   try {
     const page = await pdf.getPage(1);
     const textContent = await page.getTextContent();
     const text = textContent.items.map(i => i.str).join(" ");
 
-    // 1. Regex pour EMT et EM
+    // Recherche tag type "1001-EMT_xxx" ou "EMT_xxx"
     let match = text.match(/([0-9]{3,4}-(?:EMT|EM)[A-Za-z0-9_]+)/);
+    if (!match) match = text.match(/(EMT?_[A-Za-z0-9]+)/);
 
-    // 2. Fallback : format style EMT_CCA ou EM_CCA
-    if (!match) {
-      match = text.match(/(EMT?_[A-Za-z0-9]+)/);
-    }
-
-    // 3. Fallback : nom de fichier
     if (!match && file?.name) {
-      const nameMatch = file.name.match(/(EMT?_[A-Za-z0-9]+)/);
-      if (nameMatch) {
-        match = nameMatch;
-      }
+      match = file.name.match(/(EMT?_[A-Za-z0-9]+)/);
     }
 
-    // 4. Extraction du numéro FDSxxx
-    let fdsId = null;
-    if (file?.name) {
-      const fdsMatch = file.name.match(/FDS0*([0-9]+)/i);
-      if (fdsMatch) {
-        const num = parseInt(fdsMatch[1], 10);
-        fdsId = (1000 + num).toString(); // ex: FDS003 → 1003
-      }
-    }
-
-    // 5. Construction du résultat
     if (match) {
-      const tag = match[1].toUpperCase();
-
-      // passe par resolveCandidate si dispo
-      if (typeof resolveCandidate === "function") {
-        const resolved = resolveCandidate(tag);
-        if (resolved && resolved.id && resolved.title) {
-          // enrichir avec le numéro FDS si dispo
-          if (fdsId && !resolved.id.startsWith(fdsId)) {
-            const fullId = `${fdsId}-${resolved.title}`;
-            return { id: fullId, title: fullId, name: resolved.title };
-          }
-          return resolved;
-        }
-      }
-
-      // si FDS dispo → on construit id complet
-      if (fdsId) {
-        const fullId = `${fdsId}-${tag}`;
-        return { id: fullId, title: fullId, name: tag };
-      } else {
-        return { id: tag, title: tag, name: tag };
-      }
+      tag = match[1].toUpperCase();
     }
   } catch (e) {
-    console.warn("[Instances] Impossible de détecter EM", e);
+    console.warn("[Instances] Impossible de lire la page 1", e);
   }
 
+  // Extraction du numéro FDSxxx
+  let fdsId = null;
+  if (file?.name) {
+    const fdsMatch = file.name.match(/FDS0*([0-9]+)/i);
+    if (fdsMatch) {
+      const num = parseInt(fdsMatch[1], 10);
+      fdsId = (1000 + num).toString(); // FDS003 → 1003
+    }
+  }
+
+  if (tag) {
+    // Base avec ou sans FDS
+    let fullId = fdsId ? `${fdsId}-${tag}` : tag;
+    let result = { id: fullId, title: fullId, name: tag };
+
+    // Si resolveCandidate disponible ET DB non vide → on ajuste mais on garde le fdsId
+    if (typeof resolveCandidate === "function") {
+      try {
+        const resolved = resolveCandidate(tag);
+        if (resolved && resolved.title) {
+          const adjusted = `${fdsId ? fdsId + "-" : ""}${resolved.title}`;
+          result = { id: adjusted, title: adjusted, name: resolved.title };
+        }
+      } catch (_) {}
+    }
+
+    return result;
+  }
+
+  // Fallback si rien trouvé
   return { id: "0000", title: "UNKNOWN", name: "UNKNOWN" };
 }
+
+
 
 
 
