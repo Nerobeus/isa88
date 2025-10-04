@@ -115,6 +115,21 @@ console.log("[Instances] service chargé (v13)");
       // --- Extraction des autres sections ---
       await extractOtherSections(pdf, foundPageNum, finalEmId, finalEmTitle, revision, file?.name);
 
+      // --- Affichage UI des résultats extraits ---
+      if (global.UITable) {
+        const parsedPages = [];
+
+        (this.lastResult.variants || this.lastResult.results || []).forEach(r => {
+          parsedPages.push({
+            pageNum: r.pageNum || 0,
+            type: r.type || "Variants",
+            rows: r.rows || r.lines || []
+          });
+        });
+
+        UITable.renderAnalysisTables(parsedPages);
+      }
+
       return this.lastResult;
     }
   };
