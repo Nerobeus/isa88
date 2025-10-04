@@ -1,12 +1,11 @@
 // instances_service_core.js — extraction des tableaux d’analyses fonctionnelles
-// baseline 0.9 — tout centralisé dans control_data (avec category)
-
+// v1.0 — retourne uniquement les résultats, pas d’écriture DB directe
 (function(global){
 
   // --- Détection sommaire ---
   function isSummaryPage(fullText) {
     if (/TABLE OF CONTENTS|SOMMAIRE|INDEX/i.test(fullText)) return true;
-    if (/\.{3,}\s*\d+/.test(fullText)) return true; // lignes "..... 12"
+    if (/\.{3,}\s*\d+/.test(fullText)) return true;
     if (/CHAPTER|SECTION/i.test(fullText)) return true;
     return false;
   }
@@ -49,7 +48,6 @@
         const thumb = await VariantParsing.generateVariantThumbnail(pdf, p, r.bbox);
 
         results.push({
-          id: DBService.genId("control_data"),
           category: "variants",
           emId,
           emTitle,
@@ -65,16 +63,7 @@
       }
     }
 
-    let saved = 0;
-    for (const v of results) {
-      try {
-        await DBService.put("control_data", v);
-        saved++;
-      } catch (e) {
-        console.error("[InstancesCore] Erreur DB put control_data (variants)", e);
-      }
-    }
-    console.log(`[InstancesCore] ${saved}/${results.length} variants sauvegardés dans control_data`);
+    console.log(`[InstancesCore] ${results.length} variants extraits`);
     return results;
   }
 
@@ -172,8 +161,7 @@
         const pos = positions[idx];
 
         results.push({
-          id: DBService.genId("control_data"),
-          category,   // 🔹 chaque enregistrement garde sa catégorie
+          category,
           emId,
           emTitle,
           revision,
@@ -190,16 +178,7 @@
       }
     }
 
-    let saved = 0;
-    for (const r of results) {
-      try {
-        await DBService.put("control_data", r);
-        saved++;
-      } catch (e) {
-        console.error(`[InstancesCore] Erreur DB put control_data (${category})`, e);
-      }
-    }
-    console.log(`[InstancesCore] ${saved}/${results.length} enregistrements ${category} sauvegardés dans control_data`);
+    console.log(`[InstancesCore] ${results.length} enregistrements ${category} extraits`);
     return results;
   }
 
