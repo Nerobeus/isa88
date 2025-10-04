@@ -218,119 +218,98 @@ console.log("[Instances] service chargé (v13)");
     if (match) return "1" + parseInt(match[1], 10).toString().padStart(3, "0");
     return null;
   }
-  // --- EM detection (structTree → text page1 → filename) + resolveCandidate ---
-async function detectEmId(pdf, file) {
-  const candidates = [];
-
-  // 1) Page 1 — structTree si dispo
-  try {
-    const page1 = await pdf.getPage(1);
-
-    if (typeof page1.getStructTree === "function") {
-      try {
-        const tree = await page1.getStructTree();
-        const stack = [tree];
-
-        while (stack.length) {
-          const node = stack.pop();
-          if (!node) continue;
-          if (Array.isArray(node.children)) stack.push(...node.children);
-          // pdf.js expose parfois le texte via .role / .alt / .id / .actualText / .children text
-          if (typeof node.lang === "string" && node.lang) candidates.push(node.lang);
-          if (typeof node.alt === "string" && node.alt) candidates.push(node.alt);
-          if (typeof node.id === "string" && node.id) candidates.push(node.id);
-          if (typeof node.actualText === "string" && node.actualText) candidates.push(node.actualText);
-        }
-      } catch (e) {
-        // structTree non fiable : on continue
-      }
-    }
-
-    // 2) Page 1 — texte “brut”
+// --- Détection EM / EMT avec support FDS et resolveCandidate ---
+  async function detectEmId(pdf, file) {
     try {
-      const textContent = await page1.getTextContent();
+      const page = await pdf.getPage(1);
+      const textContent = await page.getTextContent();
       const text = textContent.items.map(i => i.str).join(" ");
 
-      // Patterns robustes : 1001-EMT_X, 1001-EM_X, EMT_X, EM_X
-      const patterns = [
-        /([0-9]{3,4}\s*[-–]\s*(?:EMT|EM)[-_]?[A-Za-z0-9_]+)/g,
-        /\b(EMT?_[A-Za-z0-9_]+)\b/g
-      ];
-      for (const re of patterns) {
-        let m;
-        while ((m = re.exec(text)) !== null) {
-          candidates.push(m[1]);
+      // 1. Regex élargie pour capter EMT et EM
+      let match = text.match(/([0-9]{3,4}-(?:EMT|EM)[A-Za-z0-9_]+)/);
+
+      // 2. Fallback : format style EMT_CCA ou EM_CCA
+      if (!match) {
+        match = text.match(/(EMT?_[A-Za-z0-9]+)/);
+      }
+
+      // 3. Fallback : nom de fichier
+      if (!match && file?.name) {
+        const nameMatch = file.name.match(/(EMT?_[A-Za-z0-9]+)/);
+        if (nameMatch) {
+          match = nameMatch;
+        }
+      }
+
+      // 4. Extraction du numéro FDSxxx dans le nom du fichier
+      let fdsId = null;
+      if (file?.name) {
+        const fdsMatch = file.name.match(/FDS0*([0-9]+)/i);
+        if (fdsMatch) {
+          const num = parseInt(fdsMatch[1], 10);
+          fdsId = (1000 + num).toString(); // ex: FDS003 → 1003
+        }
+      }
+
+      // 5. Construction du résultat
+      if (match) {
+        const tag = match[1].toUpperCase();
+        if (typeof resolveCandidate === "function") {
+          const resolved = resolveCandidate(tag);
+          if (resolved && resolved.id && resolved.title) {
+            // enrichir avec le numéro FDS si dispo
+            if (fdsId && !resolved.id.startsWith(fdsId)) {
+              const fullId = `${fdsId}-${resolved.title}`;
+              return { id: fullId, title: fullId, name: resolved.title };
+            }
+            return resolved;
+          }
+        }
+        if (fdsId) {
+          const fullId = `${fdsId}-${tag}`;
+          return { id: fullId, title: fullId, name: tag };
+        } else {
+          return { id: tag, title: tag, name: tag };
         }
       }
     } catch (e) {
-      // ignore, on aura le fallback filename
+      console.warn("[Instances] Impossible de détecter EM", e);
     }
-  } catch (e) {
-    // pas de page 1, on tombera sur le filename
+
+    // Fallback final
+    return { id: "0000", title: "UNKNOWN", name: "UNKNOWN" };
   }
 
-  // 3) Fallback — nom de fichier
-  if (file?.name) {
-    const name = file.name;
-    const filePatterns = [
-      /([0-9]{3,4}\s*[-–]\s*(?:EMT|EM)[-_]?[A-Za-z0-9_]+)/g,
-      /\b(EMT?_[A-Za-z0-9_]+)\b/g
-    ];
-    for (const re of filePatterns) {
-      let m;
-      while ((m = re.exec(name)) !== null) {
-        candidates.push(m[1]);
+
+  // --- Normalisation locale (complément resolveCandidate) ---
+  function normalizeLocalEM(raw, fdsId) {
+    const s = String(raw).replace(/\s+/g, "");
+
+    // Cas : 1001-EMT_CCA
+    let m = s.match(/^([0-9]{3,4})[-–]((?:EMT|EM)[-_]?[A-Za-z0-9_]+)$/i);
+    if (m) {
+      const idNum = m[1];
+      const tag = m[2].replace(/–/g, "-").replace(/^-+/, "");
+      const fullId = `${idNum}-${tag}`;
+      return { id: fullId, title: fullId, name: tag };
+    }
+
+    // Cas : EM_CCA
+    m = s.match(/^(EMT?|EM)[-_]?[A-Za-z0-9_]+$/i);
+    if (m) {
+      const tag = s.toUpperCase().replace(/–/g, "-").replace(/^-+/, "");
+      if (fdsId) {
+        const fullId = `${fdsId}-${tag}`;
+        return { id: fullId, title: fullId, name: tag };
+      } else {
+        return { id: tag, title: tag, name: tag };
       }
     }
+
+    return null;
   }
 
-  // Déduplication douce
-  const uniq = Array.from(new Set(candidates.map(s => String(s).trim()))).filter(Boolean);
 
-  // 4) Passage par resolveCandidate (si présent) pour normaliser/valider
-  for (const raw of uniq) {
-    try {
-      if (typeof resolveCandidate === "function") {
-        const resolved = resolveCandidate(raw);
-        // On accepte si la résolution produit un id + title plausibles
-        if (resolved && resolved.id && resolved.title) {
-          return resolved; // { id, title, name?, ... } selon ton implémentation
-        }
-      }
-    } catch (_) {
-      // on essaie le prochain candidat
-    }
-  }
-
-  // 5) Fallback local (au cas où resolveCandidate ne passe rien)
-  for (const raw of uniq) {
-    const norm = normalizeLocalEM(raw);
-    if (norm) return norm; // {id, title, name}
-  }
-
-  // 6) Fallback final
-  return { id: "0000", title: "UNKNOWN", name: "UNKNOWN" };
-}
-
-// Normalisation locale très prudente, utilisée seulement si resolveCandidate n’a rien retourné
-function normalizeLocalEM(raw) {
-  const s = String(raw).replace(/\s+/g, "");
-  // 1001-EMT_Name ou 1001-EM_Name
-  let m = s.match(/^([0-9]{3,4})[-–]((?:EMT|EM)[-_]?[A-Za-z0-9_]+)$/i);
-  if (m) {
-    const idNum = m[1];
-    const tag = m[2].replace(/–/g, "-").replace(/^-+/, "");
-    const title = `${idNum}-${tag.replace(/^([Ee][Mm][Tt]?)[-_]?/, (a) => a.toUpperCase().replace(/_?$/, "_"))}`.replace(/__+/, "_");
-    return { id: `${idNum}-${tag}`, title, name: title };
-  }
-  // EMT_Name ou EM_Name
-  m = s.match(/^(EMT?|EM)[-_]?[A-Za-z0-9_]+$/i);
-  if (m) {
-    const tag = s.toUpperCase().replace(/–/g, "-").replace(/^-+/, "");
-    return { id: "0000", title: tag, name: tag };
-  }
-  return null;
-}
 
   function resolveCandidate(ems, candidateName, candidateNum) {
     const foundByName = candidateName ? ems.find(e => e.title === candidateName || e.name === candidateName) : null;
