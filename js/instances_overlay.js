@@ -5,6 +5,7 @@
     file: null,          // conserve le fichier ouvert
     pageNum: 1,
     variants: [],
+    items: [],           // ✅ nouveau : toutes les autres lignes (CMs, setpoints, alarms…)
     scale: 1,
     dx: 0,
     dy: 0,
@@ -16,11 +17,12 @@
     lastY: 0,
     eventsBound: false,
 
-    // ✅ Correction : init prépare aussi les contexts + events
-    async init(file, variants, startPage = 1) {
+    // Prépare contexts + events + navigation
+    async init(file, variants, items = [], startPage = 1) {
       this.file = file;
       this.pdfDoc = await pdfjsLib.getDocument(await file.arrayBuffer()).promise;
       this.variants = variants || [];
+      this.items = items || [];
       this.pageNum = startPage;
       this.dx = 0;
       this.dy = 0;
@@ -36,18 +38,19 @@
       this.ctx = canvas.getContext("2d");
       this.overlayCtx = overlay.getContext("2d");
 
-      this.bindNavButtons();   // active navigation
+      this.bindNavButtons();   // navigation
       this.bindEvents(wrap);   // wheel/drag
       this.resize();           // fixe tailles + 1er render
     },
 
-    async render(file, pageNum, variants) {
+    async render(file, pageNum, variants, items = []) {
       console.log("[InstancesOverlay] Rendu Instances démarré");
 
       this.file = file;
       this.pdfDoc = await pdfjsLib.getDocument(await file.arrayBuffer()).promise;
       this.pageNum = pageNum;
       this.variants = variants || [];
+      this.items = items || [];
 
       const wrap = document.querySelector("#tab-instances .canvas-wrap");
       const canvas = document.getElementById("instance-canvas");
@@ -61,7 +64,8 @@
       this.ctx = canvas.getContext("2d");
       this.overlayCtx = overlay.getContext("2d");
 
-      this.resize(); // initialise les dimensions et déclenche renderPage()
+      this.bindNavButtons();   // ✅ ajouté aussi ici
+      this.resize();           // initialise les dimensions et déclenche renderPage()
       this.bindEvents(wrap);
 
       await this.renderPage();
@@ -110,34 +114,49 @@
 
       const transform = this.viewport.transform;
 
-      // Affiche seulement les variants de la page courante
+      // --- Dessin des variants ---
       this.variants
-        .filter(v => v.page === this.pageNum)
-        .forEach((v, idx) => {
-          const { x, y, w, h } = v.bbox;
+        .filter(v => v.page === this.pageNum && v.bbox)
+        .forEach((v, idx) => this.drawBox(ctx, transform, v, idx, "variant"));
 
-          // Appliquer la même transformation que PDF.js
-          const p1 = this.applyTransform({ x, y }, transform);
-          const p2 = this.applyTransform({ x: x + w, y: y + h }, transform);
+      // --- Dessin des autres items (CMs, setpoints, alarms…) ---
+      this.items
+        .filter(it => it.page === this.pageNum && it.bbox)
+        .forEach((it, idx) => this.drawBox(ctx, transform, it, idx, it.source || "item"));
+    },
 
-          // Ajouter le pan manuel (dx, dy)
-          const rx = Math.min(p1.x, p2.x) + this.dx;
-          const ry = Math.min(p1.y, p2.y) + this.dy;
-          const rw = Math.abs(p2.x - p1.x);
-          const rh = Math.abs(p2.y - p1.y);
+    drawBox(ctx, transform, obj, idx, type = "item") {
+      const { x, y, w, h } = obj.bbox;
+      const p1 = this.applyTransform({ x, y }, transform);
+      const p2 = this.applyTransform({ x: x + w, y: y + h }, transform);
 
-          const hue = (idx * 47) % 360;
-          ctx.strokeStyle = `hsl(${hue}, 80%, 50%)`;
-          ctx.fillStyle = `hsla(${hue}, 80%, 50%, 0.1)`;
+      const rx = Math.min(p1.x, p2.x) + this.dx;
+      const ry = Math.min(p1.y, p2.y) + this.dy;
+      const rw = Math.abs(p2.x - p1.x);
+      const rh = Math.abs(p2.y - p1.y);
 
-          ctx.lineWidth = 2;
-          ctx.fillRect(rx, ry, rw, rh);
-          ctx.strokeRect(rx, ry, rw, rh);
+      // Couleurs par type
+      let hue;
+      if (type === "variant") hue = (idx * 47) % 360;
+      else if (type === "control") hue = 200;       // bleu
+      else if (type === "measure") hue = 120;       // vert
+      else if (type === "characteristics") hue = 45; // jaune
+      else if (type === "alarm") hue = 0;           // rouge
+      else hue = (idx * 23) % 360;                  // fallback
 
-          ctx.fillStyle = `hsl(${hue}, 80%, 40%)`;
-          ctx.font = "14px Arial";
-          ctx.fillText(v.variantId || `#${idx + 1}`, rx + 4, ry + 16);
-        });
+      ctx.strokeStyle = `hsl(${hue}, 80%, 50%)`;
+      ctx.fillStyle = `hsla(${hue}, 80%, 50%, 0.1)`;
+
+      ctx.lineWidth = 2;
+      ctx.fillRect(rx, ry, rw, rh);
+      ctx.strokeRect(rx, ry, rw, rh);
+
+      ctx.fillStyle = `hsl(${hue}, 80%, 40%)`;
+      ctx.font = "12px Arial";
+
+      const label = obj.variantId ? ("V" + obj.variantId) :
+                    obj.roleName || obj.name || obj.tag || obj.id || `#${idx+1}`;
+      ctx.fillText(label, rx + 4, ry + 14);
     },
 
     resize() {
@@ -201,12 +220,14 @@
         prev.onclick = () => {
           if (this.pageNum > 1) {
             this.pageNum--;
+            this.dx = 0; this.dy = 0; this.scale = 1;
             this.renderPage();
           }
         };
         next.onclick = () => {
           if (this.pageNum < this.pdfDoc.numPages) {
             this.pageNum++;
+            this.dx = 0; this.dy = 0; this.scale = 1;
             this.renderPage();
           }
         };

@@ -24,21 +24,20 @@
     <input type="file" id="pid-file" accept="application/pdf"/>
     <label for="pid-file" class="btn">Importer P&ID</label>
     <span id="pid-filename" class="muted"></span>
-    <button id="reset-zoom" class="btn">Réinitialiser vue</button>
 
-    <!-- Import Instances -->
-    <input type="file" id="pdf-file" accept="application/pdf"/>
-    <label for="pdf-file" class="btn">Importer Instances</label>
+    <!-- Import Analyses fonctionnelles (multi-fichiers PDF) -->
+    <input type="file" id="pdf-file" accept="application/pdf" multiple />
+    <label for="pdf-file" class="btn">Importer analyses fonctionnelles</label>
     <span id="pdf-filename" class="muted"></span>
     <div id="pdf-status" class="status"></div>
   </div>
 </header>
 
 <nav class="tabs">
-  <button class="tab active" data-target="#tab-excel">Tag names</button>
-  <button class="tab" data-target="#tab-pid">P&ID</button>
-  <button class="tab" data-target="#tab-instances">Instances</button>
-  <button class="tab tab-alerts" data-target="#tab-alerts">Alertes</button>
+  <button type="button" class="tab active" data-target="#tab-excel">Tag names</button>
+  <button type="button" class="tab" data-target="#tab-pid">P&ID</button>
+  <button type="button" class="tab" data-target="#tab-instances">Analyses fonctionnelles</button>
+  <button type="button" class="tab tab-alerts" data-target="#tab-alerts">Alertes</button>
 </nav>
 
 <main>
@@ -56,12 +55,25 @@
       <div class="layout-pid">
         <aside class="card side">
           <h3>EM / Instances (PID courant)</h3>
+
+          <!-- ✅ Select PID -->
+          <div class="pid-toolbar">
+            <label for="pid-select" class="muted">Choisir un PID :</label>
+            <select id="pid-select">
+              <option value="">-- Sélectionner un PID --</option>
+            </select>
+          </div>
+
           <div id="pid-tree" class="tree"></div>
         </aside>
+
         <div class="card main">
           <div class="canvas-wrap">
             <canvas id="pid-canvas"></canvas>
             <canvas id="pidOverlayCanvas"></canvas>
+          </div>
+          <div class="pid-controls">
+            <button id="reset-zoom" class="btn">Réinitialiser vue</button>
           </div>
           <div id="pid-status" class="status"></div>
         </div>
@@ -75,12 +87,19 @@
       <div class="layout-instances">
         <aside class="card side">
           <h3>Résultats variants</h3>
+          <!-- ✅ Toolbar Instances -->
+          <div class="instances-toolbar">
+            <label for="instances-em-select" class="muted">Choisir un EM :</label>
+            <select id="instances-em-select">
+              <option value="">-- Sélectionner un EM --</option>
+            </select>
+          </div>
           <table id="results-table">
             <thead>
               <tr>
-                <th>Variant ID</th>
+                <th>ID</th>
                 <th>Miniature</th>
-                <th>Éléments validés</th>
+                <th>Éléments</th>
                 <th>Alertes</th>
               </tr>
             </thead>
@@ -89,7 +108,6 @@
         </aside>
         <div class="card main">
           <h3>Aperçu PDF (variants multi-pages)</h3>
-          <!-- ✅ Ajout navigation -->
           <div class="canvas-controls">
             <button id="btn-prev-page">◀ Page précédente</button>
             <button id="btn-next-page">Page suivante ▶</button>
@@ -105,18 +123,50 @@
 
   <!-- Alertes -->
   <section id="tab-alerts" class="tab-panel">
-    <div class="tab-panel-inner">
-      <div class="card card-alerts">
-        <h3>Alertes de cohérence</h3>
-        <table id="alerts-table">
-          <thead>
-            <tr>
-              <th>⚠</th><th>Source</th><th>EM_ID</th><th>Contexte</th><th>Détails</th><th>Type</th>
-            </tr>
-          </thead>
-          <tbody></tbody>
-        </table>
-      </div>
+    <div class="table-container">
+      <table id="alerts-table">
+        <thead>
+          <tr>
+            <th data-col="source">Source</th>
+            <th data-col="file">Fichier</th>
+            <th data-col="message">Message</th>
+            <th data-col="details">Détails</th>
+            <th data-col="type">Type</th>
+            <th data-col="date">Date apparition</th>
+            <th data-col="dateTraitee">Date traitement</th>
+            <th data-col="status">Statut</th>
+          </tr>
+          <tr class="filters">
+            <th><input type="text" placeholder="Filtrer source"/></th>
+            <th><input type="text" placeholder="Filtrer fichier"/></th>
+            <th><input type="text" placeholder="Filtrer message"/></th>
+            <th><input type="text" placeholder="Filtrer détails"/></th>
+            <th>
+              <select>
+                <option value="">Tous</option>
+                <option value="Formalisation">Formalisation</option>
+                <option value="Consistance">Consistance</option>
+                <option value="Mapping">Mapping</option>
+                <option value="Parsing">Parsing</option>
+                <option value="Info">Info</option>
+                <option value="Error">Error</option>
+              </select>
+            </th>
+            <th><input type="date"/></th>
+            <th><input type="date"/></th>
+            <th>
+              <select>
+                <option value="">Tous</option>
+                <option value="Non traité">Non traité</option>
+                <option value="Traité">Traité</option>
+                <option value="Validé">Validé</option>
+                <option value="Rejeté">Rejeté</option>
+              </select>
+            </th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
     </div>
   </section>
 </main>
@@ -130,9 +180,17 @@
 <script src="js/color_service.js"></script>
 <script src="js/db_service.js"></script>
 <script src="js/excel_service.js"></script>
-<script src="js/pid_overlay.js"></script>
+<script src="js/unit_parser.js"></script>
+<script src="js/pid_service_core.js"></script>
+<script src="js/pid_service_roles.js"></script>
+<script src="js/pid_service_variants.js"></script>
+<script src="js/pid_service_overlay.js"></script>
 <script src="js/pid_service.js"></script>
+<script src="js/alert_service.js"></script>
+<script src="js/ui_alert.js"></script>
 <script src="js/instances_overlay.js"></script>
+<script src="js/instances_service_core.js"></script>
+<script src="js/variant_parsing.js"></script>
 <script src="js/instances_service.js"></script>
 <script src="js/ui_tree.js"></script>
 <script src="js/ui_table.js"></script>
