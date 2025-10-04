@@ -1,5 +1,48 @@
-E44_16_FDS003_V03 - EMT_CCA.pdf
-SPEC_ISA88_v0.1.pdf
-archive.zip
-excel/
-pids/
+# --- OS spécifiques ---
+.DS_Store
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# --- VS Code / IDE ---
+.vscode/
+.idea/
+*.code-workspace
+
+# --- Logs & temporaires ---
+*.log
+*.tmp
+*.swp
+*.bak
+*.old
+
+# --- Node / JS (si jamais tu ajoutes npm plus tard) ---
+node_modules/
+npm-debug.log*
+
+# --- Archives et documents lourds ---
+*.zip
+*.7z
+*.rar
+*.tar
+*.gz
+
+# --- Documents de spécifications (pas dans le dépôt git) ---
+*.pdf
+*.docx
+*.xlsx
+*.xls
+*.ods
+*.odt
+*.pptx
+*.odp
+
+# --- Sorties de build (si jamais tu ajoutes un système de build plus tard) ---
+dist/
+build/
+out/
+coverage/
+
+# --- Données locales de test ---
+/tests/local/
+/data/local/
