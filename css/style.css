@@ -404,3 +404,34 @@ main {
   gap: .5rem;
   align-items: center;
 }
+
+.analysis-section {
+  margin-bottom: 2rem;
+  padding: 1rem;
+  border: 1px solid #ddd;
+  border-radius: 8px;
+  background: #fafafa;
+}
+
+.analysis-section.highlight {
+  border: 2px solid #007acc;
+  background: #eef7ff;
+}
+
+.analysis-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 0.5rem;
+}
+
+.analysis-table th,
+.analysis-table td {
+  border: 1px solid #ccc;
+  padding: 6px 10px;
+  text-align: left;
+}
+
+.analysis-table th {
+  background: #f0f0f0;
+  font-weight: bold;
+}

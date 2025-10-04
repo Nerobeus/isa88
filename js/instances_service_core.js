@@ -1,26 +1,17 @@
 // instances_service_core.js — extraction des tableaux d’analyses fonctionnelles
-// baseline 0.9.1 — retourne les données (pas d'écriture DB) + export complet
+// baseline 0.9 — tout centralisé dans control_data (avec category)
 
 (function(global){
 
   // --- Détection sommaire ---
   function isSummaryPage(fullText) {
     if (/TABLE OF CONTENTS|SOMMAIRE|INDEX/i.test(fullText)) return true;
-    if (/\.{3,}\s*\d+/.test(fullText)) return true; // "..... 12"
+    if (/\.{3,}\s*\d+/.test(fullText)) return true; // lignes "..... 12"
     if (/CHAPTER|SECTION/i.test(fullText)) return true;
     return false;
   }
 
-  // --- util id ---
-  function safeGenId(prefix) {
-    if (global.DBService && typeof DBService.genId === "function") return DBService.genId(prefix);
-    return `${prefix}_${Math.random().toString(36).slice(2,9)}_${Date.now()}`;
-  }
-
-  // ------------------------------------------------------------------
-  // LIST OF VARIANTS
-  // startPage = page réelle de la table (détectée côté orchestrateur)
-  // ------------------------------------------------------------------
+  // --- LIST OF VARIANTS ---
   async function extractVariants(pdf, startPage, emId, emTitle, revision) {
     const STOP_RE = /CONTROL MODULES?|MEASUREMENTS?|CHARACTERISTICS?|MACHINE PARAMETERS?|EXTERNAL/i;
     const results = [];
@@ -32,7 +23,7 @@
       const fullText = tc.items.map(it => it.str).join(" ");
 
       if (isSummaryPage(fullText)) {
-        console.log(`[InstancesCore] Page ${p} sommaire → skip Variants`);
+        console.log(`[InstancesCore] Page ${p} est un sommaire → skip Variants`);
         continue;
       }
       if (p !== startPage && STOP_RE.test(fullText)) {
@@ -46,31 +37,44 @@
         y: it.transform[5]
       }));
 
-      const headerThisPage = (global.VariantParsing?.detectVariantHeader(items)) || headerInfo;
+      const headerThisPage = VariantParsing.detectVariantHeader(items) || headerInfo;
       if (!headerThisPage) continue;
       headerInfo = headerThisPage;
 
-      const rows = await global.VariantParsing.extractVariantsByPositions(page, headerThisPage);
+      const rows = await VariantParsing.extractVariantsByPositions(page, headerThisPage);
       console.log(`[InstancesCore] Page ${p} → ${rows.length} variants détectés`);
 
       for (const r of rows) {
-        const idx = results.length + 1;
-        // La vignette peut être coûteuse; on laisse l’orchestrateur décider de la générer si besoin
+        const index = results.length + 1;
+        const thumb = await VariantParsing.generateVariantThumbnail(pdf, p, r.bbox);
+
         results.push({
-          id: `${emId}-${String(idx).padStart(2,"0")}-R${revision}`,
+          id: DBService.genId("control_data"),
           category: "variants",
           emId,
           emTitle,
-          index: idx,
+          index,
           revision,
           variantId: r.variantId || "",
           description: r.description || "",
           bbox: r.bbox,
           page: p,
+          thumbnail: thumb,
           createdAt: new Date().toISOString()
         });
       }
     }
+
+    let saved = 0;
+    for (const v of results) {
+      try {
+        await DBService.put("control_data", v);
+        saved++;
+      } catch (e) {
+        console.error("[InstancesCore] Erreur DB put control_data (variants)", e);
+      }
+    }
+    console.log(`[InstancesCore] ${saved}/${results.length} variants sauvegardés dans control_data`);
     return results;
   }
 
@@ -79,8 +83,7 @@
   // ------------------------------------------------------------------
 
   async function extractControlModules(pdf, startPage, emId, emTitle, revision) {
-    return extractGenericTableWithBBox(
-      pdf, startPage, emId, emTitle, revision,
+    return await extractGenericTableWithBBox(pdf, startPage, emId, emTitle, revision,
       ["CMT", "Role Name", "Display Name", "Instance Tag", "Description"],
       "control_modules",
       /MEASUREMENTS?|CHARACTERISTICS?|MACHINE PARAMETERS?|EXTERNAL/i
@@ -88,8 +91,7 @@
   }
 
   async function extractMeasurements(pdf, startPage, emId, emTitle, revision) {
-    return extractGenericTableWithBBox(
-      pdf, startPage, emId, emTitle, revision,
+    return await extractGenericTableWithBBox(pdf, startPage, emId, emTitle, revision,
       ["Generic Tag", "Instance Tag", "Description", "Data type"],
       "measurements_switches",
       /CHARACTERISTICS?|MACHINE PARAMETERS?|EXTERNAL/i
@@ -97,8 +99,7 @@
   }
 
   async function extractCharacteristics(pdf, startPage, emId, emTitle, revision) {
-    return extractGenericTableWithBBox(
-      pdf, startPage, emId, emTitle, revision,
+    return await extractGenericTableWithBBox(pdf, startPage, emId, emTitle, revision,
       ["Name", "Value", "Unit", "Description"],
       "characteristics",
       /MACHINE PARAMETERS?|EXTERNAL/i
@@ -106,8 +107,7 @@
   }
 
   async function extractMachineParameters(pdf, startPage, emId, emTitle, revision) {
-    return extractGenericTableWithBBox(
-      pdf, startPage, emId, emTitle, revision,
+    return await extractGenericTableWithBBox(pdf, startPage, emId, emTitle, revision,
       ["Name", "Default", "Unit", "Description"],
       "machine_parameters",
       /EXTERNAL/i
@@ -115,8 +115,7 @@
   }
 
   async function extractExternalInitialConditions(pdf, startPage, emId, emTitle, revision) {
-    return extractGenericTableWithBBox(
-      pdf, startPage, emId, emTitle, revision,
+    return await extractGenericTableWithBBox(pdf, startPage, emId, emTitle, revision,
       ["Condition", "Description"],
       "external_initial_conditions",
       /EXTERNAL ERROR CONDITIONS?|EXTERNAL EXCHANGES?|ALARM/i
@@ -124,8 +123,7 @@
   }
 
   async function extractExternalErrorConditions(pdf, startPage, emId, emTitle, revision) {
-    return extractGenericTableWithBBox(
-      pdf, startPage, emId, emTitle, revision,
+    return await extractGenericTableWithBBox(pdf, startPage, emId, emTitle, revision,
       ["Condition", "Description"],
       "external_error_conditions",
       /EXTERNAL EXCHANGES?|ALARM/i
@@ -133,8 +131,7 @@
   }
 
   async function extractExternalExchanges(pdf, startPage, emId, emTitle, revision) {
-    return extractGenericTableWithBBox(
-      pdf, startPage, emId, emTitle, revision,
+    return await extractGenericTableWithBBox(pdf, startPage, emId, emTitle, revision,
       ["Exchange", "Description"],
       "external_exchanges",
       /ALARM/i
@@ -142,8 +139,7 @@
   }
 
   async function extractAlarmMessages(pdf, startPage, emId, emTitle, revision) {
-    return extractGenericTableWithBBox(
-      pdf, startPage, emId, emTitle, revision,
+    return await extractGenericTableWithBBox(pdf, startPage, emId, emTitle, revision,
       ["Alarm ID", "Message", "Severity"],
       "alarm_messages",
       /END|$/i
@@ -151,7 +147,7 @@
   }
 
   // ------------------------------------------------------------------
-  // Fonction générique + parsing utilitaire
+  // Fonction générique de parsing avec skip sommaire
   // ------------------------------------------------------------------
 
   async function extractGenericTableWithBBox(pdf, startPage, emId, emTitle, revision, headers, category, stopRe) {
@@ -164,25 +160,26 @@
       const fullText = tc.items.map(it => it.str).join(" ");
 
       if (isSummaryPage(fullText)) {
-        console.log(`[InstancesCore] Page ${p} sommaire → skip ${category}`);
+        console.log(`[InstancesCore] Page ${p} est un sommaire → skip ${category}`);
         continue;
       }
 
       const { rows, positions } = parseTableByColumnsWithBBox(tc.items, headers);
-      if (rows.length) {
-        console.log(`[InstancesCore] Page ${p} → ${rows.length} lignes détectées pour ${category}`);
-      }
+      console.log(`[InstancesCore] Page ${p} → ${rows.length} lignes détectées pour ${category}`);
 
-      for (let i = 0; i < rows.length; i++) {
+      for (let idx = 0; idx < rows.length; idx++) {
+        const row = rows[idx];
+        const pos = positions[idx];
+
         results.push({
-          id: safeGenId(category),
-          category,
+          id: DBService.genId("control_data"),
+          category,   // 🔹 chaque enregistrement garde sa catégorie
           emId,
           emTitle,
           revision,
-          ...rows[i],
+          ...row,
           page: p,
-          bbox: positions[i].bbox,
+          bbox: pos.bbox,
           createdAt: new Date().toISOString()
         });
       }
@@ -193,8 +190,22 @@
       }
     }
 
+    let saved = 0;
+    for (const r of results) {
+      try {
+        await DBService.put("control_data", r);
+        saved++;
+      } catch (e) {
+        console.error(`[InstancesCore] Erreur DB put control_data (${category})`, e);
+      }
+    }
+    console.log(`[InstancesCore] ${saved}/${results.length} enregistrements ${category} sauvegardés dans control_data`);
     return results;
   }
+
+  // ------------------------------------------------------------------
+  // Parsing utilitaire
+  // ------------------------------------------------------------------
 
   function parseTableByColumnsWithBBox(items, headers) {
     const rows = [];
@@ -241,29 +252,9 @@
   }
 
   // ------------------------------------------------------------------
-  // Helper : extraction groupée (facultatif)
+  // Expose API publique
   // ------------------------------------------------------------------
-  async function extractAllSections(pdf, startPages, emId, emTitle, revision) {
-    // startPages = { variants: n, control_modules: n, ... } — laissé au caller
-    return {
-      id: `control_${emId}_R${revision}`,
-      emId,
-      emTitle,
-      revision,
-      createdAt: new Date().toISOString(),
-      variants: await extractVariants(pdf, startPages?.variants ?? 1, emId, emTitle, revision),
-      control_modules: await extractControlModules(pdf, startPages?.control_modules ?? 1, emId, emTitle, revision),
-      measurements_switches: await extractMeasurements(pdf, startPages?.measurements_switches ?? 1, emId, emTitle, revision),
-      characteristics: await extractCharacteristics(pdf, startPages?.characteristics ?? 1, emId, emTitle, revision),
-      machine_parameters: await extractMachineParameters(pdf, startPages?.machine_parameters ?? 1, emId, emTitle, revision),
-      external_initial_conditions: await extractExternalInitialConditions(pdf, startPages?.external_initial_conditions ?? 1, emId, emTitle, revision),
-      external_error_conditions: await extractExternalErrorConditions(pdf, startPages?.external_error_conditions ?? 1, emId, emTitle, revision),
-      external_exchanges: await extractExternalExchanges(pdf, startPages?.external_exchanges ?? 1, emId, emTitle, revision),
-      alarm_messages: await extractAlarmMessages(pdf, startPages?.alarm_messages ?? 1, emId, emTitle, revision)
-    };
-  }
 
-  // --- EXPORT COMPLET (comme avant) ---
   global.InstanceServiceCore = {
     extractVariants,
     extractControlModules,
@@ -273,9 +264,7 @@
     extractExternalInitialConditions,
     extractExternalErrorConditions,
     extractExternalExchanges,
-    extractAlarmMessages,
-    // bonus
-    extractAllSections
+    extractAlarmMessages
   };
 
 })(window);
