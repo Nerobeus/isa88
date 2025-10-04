@@ -220,65 +220,69 @@ console.log("[Instances] service chargé (v13)");
   }
 // --- Détection EM / EMT avec support FDS et resolveCandidate ---
   async function detectEmId(pdf, file) {
-    try {
-      const page = await pdf.getPage(1);
-      const textContent = await page.getTextContent();
-      const text = textContent.items.map(i => i.str).join(" ");
+  try {
+    const page = await pdf.getPage(1);
+    const textContent = await page.getTextContent();
+    const text = textContent.items.map(i => i.str).join(" ");
 
-      // 1. Regex élargie pour capter EMT et EM
-      let match = text.match(/([0-9]{3,4}-(?:EMT|EM)[A-Za-z0-9_]+)/);
+    // 1. Regex pour EMT et EM
+    let match = text.match(/([0-9]{3,4}-(?:EMT|EM)[A-Za-z0-9_]+)/);
 
-      // 2. Fallback : format style EMT_CCA ou EM_CCA
-      if (!match) {
-        match = text.match(/(EMT?_[A-Za-z0-9]+)/);
-      }
-
-      // 3. Fallback : nom de fichier
-      if (!match && file?.name) {
-        const nameMatch = file.name.match(/(EMT?_[A-Za-z0-9]+)/);
-        if (nameMatch) {
-          match = nameMatch;
-        }
-      }
-
-      // 4. Extraction du numéro FDSxxx dans le nom du fichier
-      let fdsId = null;
-      if (file?.name) {
-        const fdsMatch = file.name.match(/FDS0*([0-9]+)/i);
-        if (fdsMatch) {
-          const num = parseInt(fdsMatch[1], 10);
-          fdsId = (1000 + num).toString(); // ex: FDS003 → 1003
-        }
-      }
-
-      // 5. Construction du résultat
-      if (match) {
-        const tag = match[1].toUpperCase();
-        if (typeof resolveCandidate === "function") {
-          const resolved = resolveCandidate(tag);
-          if (resolved && resolved.id && resolved.title) {
-            // enrichir avec le numéro FDS si dispo
-            if (fdsId && !resolved.id.startsWith(fdsId)) {
-              const fullId = `${fdsId}-${resolved.title}`;
-              return { id: fullId, title: fullId, name: resolved.title };
-            }
-            return resolved;
-          }
-        }
-        if (fdsId) {
-          const fullId = `${fdsId}-${tag}`;
-          return { id: fullId, title: fullId, name: tag };
-        } else {
-          return { id: tag, title: tag, name: tag };
-        }
-      }
-    } catch (e) {
-      console.warn("[Instances] Impossible de détecter EM", e);
+    // 2. Fallback : format style EMT_CCA ou EM_CCA
+    if (!match) {
+      match = text.match(/(EMT?_[A-Za-z0-9]+)/);
     }
 
-    // Fallback final
-    return { id: "0000", title: "UNKNOWN", name: "UNKNOWN" };
+    // 3. Fallback : nom de fichier
+    if (!match && file?.name) {
+      const nameMatch = file.name.match(/(EMT?_[A-Za-z0-9]+)/);
+      if (nameMatch) {
+        match = nameMatch;
+      }
+    }
+
+    // 4. Extraction du numéro FDSxxx
+    let fdsId = null;
+    if (file?.name) {
+      const fdsMatch = file.name.match(/FDS0*([0-9]+)/i);
+      if (fdsMatch) {
+        const num = parseInt(fdsMatch[1], 10);
+        fdsId = (1000 + num).toString(); // ex: FDS003 → 1003
+      }
+    }
+
+    // 5. Construction du résultat
+    if (match) {
+      const tag = match[1].toUpperCase();
+
+      // passe par resolveCandidate si dispo
+      if (typeof resolveCandidate === "function") {
+        const resolved = resolveCandidate(tag);
+        if (resolved && resolved.id && resolved.title) {
+          // enrichir avec le numéro FDS si dispo
+          if (fdsId && !resolved.id.startsWith(fdsId)) {
+            const fullId = `${fdsId}-${resolved.title}`;
+            return { id: fullId, title: fullId, name: resolved.title };
+          }
+          return resolved;
+        }
+      }
+
+      // si FDS dispo → on construit id complet
+      if (fdsId) {
+        const fullId = `${fdsId}-${tag}`;
+        return { id: fullId, title: fullId, name: tag };
+      } else {
+        return { id: tag, title: tag, name: tag };
+      }
+    }
+  } catch (e) {
+    console.warn("[Instances] Impossible de détecter EM", e);
   }
+
+  return { id: "0000", title: "UNKNOWN", name: "UNKNOWN" };
+}
+
 
 
   // --- Normalisation locale (complément resolveCandidate) ---
