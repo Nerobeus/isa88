@@ -14,7 +14,7 @@ console.log("[Instances] service chargé (v13)");
       const pdf = await pdfjsLib.getDocument({ data: pdfData }).promise;
 
       // --- Détection EM ---
-      let detectedEm = await detectEmId(pdf);
+      let detectedEm = await detectEmId(pdf, file);
       if (!detectedEm) {
         console.warn("[Instances] Aucun EM détecté → fallback UNKNOWN");
         detectedEm = { id: "0000", title: "UNKNOWN", name: "UNKNOWN" };
@@ -227,14 +227,17 @@ async function detectEmId(pdf, file) {
     const textContent = await page.getTextContent();
     const text = textContent.items.map(i => i.str).join(" ");
 
+    // Chercher un EM/EMT dans la page
     let match = text.match(/([0-9]{3,4}-(?:EMT|EM)[A-Za-z0-9_]+)/);
     if (!match) match = text.match(/(EMT?_[A-Za-z0-9]+)/);
     if (!match && file?.name) match = file.name.match(/(EMT?_[A-Za-z0-9]+)/);
 
     if (match) tag = match[1].toUpperCase();
-  } catch (_) {}
+  } catch (e) {
+    console.warn("[Instances] Impossible de lire la page 1", e);
+  }
 
-  // Extraire numéro FDSxxx
+  // Extraire le numéro FDSxxx du nom de fichier
   let fdsId = null;
   if (file?.name) {
     const fdsMatch = file.name.match(/FDS[_-]*0*([0-9]+)/i);
@@ -248,7 +251,7 @@ async function detectEmId(pdf, file) {
   if (tag) {
     let name = tag;
 
-    // resolveCandidate seulement pour ajuster le "name"
+    // ResolveCandidate peut ajuster le nom
     if (typeof resolveCandidate === "function") {
       try {
         const resolved = resolveCandidate(tag);
@@ -258,13 +261,15 @@ async function detectEmId(pdf, file) {
       } catch (_) {}
     }
 
-    // ⚡️ Toujours appliquer FDS ici
+    // ⚡ Toujours appliquer FDS en dernier
     const fullId = fdsId ? `${fdsId}-${name}` : name;
     return { id: fullId, title: fullId, name };
   }
 
+  // Fallback si rien trouvé
   return { id: "0000", title: "UNKNOWN", name: "UNKNOWN" };
 }
+
 
 
 
