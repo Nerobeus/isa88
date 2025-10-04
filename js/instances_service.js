@@ -227,53 +227,46 @@ async function detectEmId(pdf, file) {
     const textContent = await page.getTextContent();
     const text = textContent.items.map(i => i.str).join(" ");
 
-    // Recherche tag type "1001-EMT_xxx" ou "EMT_xxx"
     let match = text.match(/([0-9]{3,4}-(?:EMT|EM)[A-Za-z0-9_]+)/);
     if (!match) match = text.match(/(EMT?_[A-Za-z0-9]+)/);
+    if (!match && file?.name) match = file.name.match(/(EMT?_[A-Za-z0-9]+)/);
 
-    if (!match && file?.name) {
-      match = file.name.match(/(EMT?_[A-Za-z0-9]+)/);
-    }
+    if (match) tag = match[1].toUpperCase();
+  } catch (_) {}
 
-    if (match) {
-      tag = match[1].toUpperCase();
-    }
-  } catch (e) {
-    console.warn("[Instances] Impossible de lire la page 1", e);
-  }
-
-  // Extraction du numéro FDSxxx
+  // Extraire numéro FDSxxx
   let fdsId = null;
   if (file?.name) {
-    const fdsMatch = file.name.match(/FDS0*([0-9]+)/i);
+    const fdsMatch = file.name.match(/FDS[_-]*0*([0-9]+)/i);
     if (fdsMatch) {
       const num = parseInt(fdsMatch[1], 10);
       fdsId = (1000 + num).toString(); // FDS003 → 1003
+      console.log("[Instances] FDS détecté:", fdsId);
     }
   }
 
   if (tag) {
-    // Base avec ou sans FDS
-    let fullId = fdsId ? `${fdsId}-${tag}` : tag;
-    let result = { id: fullId, title: fullId, name: tag };
+    let name = tag;
 
-    // Si resolveCandidate disponible ET DB non vide → on ajuste mais on garde le fdsId
+    // resolveCandidate seulement pour ajuster le "name"
     if (typeof resolveCandidate === "function") {
       try {
         const resolved = resolveCandidate(tag);
         if (resolved && resolved.title) {
-          const adjusted = `${fdsId ? fdsId + "-" : ""}${resolved.title}`;
-          result = { id: adjusted, title: adjusted, name: resolved.title };
+          name = resolved.title;
         }
       } catch (_) {}
     }
 
-    return result;
+    // ⚡️ Toujours appliquer FDS ici
+    const fullId = fdsId ? `${fdsId}-${name}` : name;
+    return { id: fullId, title: fullId, name };
   }
 
-  // Fallback si rien trouvé
   return { id: "0000", title: "UNKNOWN", name: "UNKNOWN" };
 }
+
+
 
 
 
