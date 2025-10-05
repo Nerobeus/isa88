@@ -435,3 +435,33 @@ main {
   background: #f0f0f0;
   font-weight: bold;
 }
+
+.analysis-section {
+  margin-bottom: 1.5em;
+  border: 1px solid #ddd;
+  border-radius: 6px;
+  padding: 0.5em;
+  background: #fafafa;
+}
+
+.analysis-section h3 {
+  margin: 0.3em 0 0.6em;
+  color: #333;
+}
+
+.analysis-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.9em;
+}
+
+.analysis-table th, .analysis-table td {
+  border: 1px solid #ccc;
+  padding: 4px 6px;
+  text-align: left;
+}
+
+.analysis-section.highlight {
+  border: 2px solid #0078d7;
+  background: #eef6ff;
+}

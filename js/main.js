@@ -233,10 +233,44 @@ function initInstances() {
       }
 
       if (window.InstancesOverlay?.render && entry.file) {
+        // 🔹 Charger toutes les données (variants + autres) depuis control_data
+        let allData = [];
+        if (window.DBService) {
+          const allRecords = await DBService.getAll("control_data");
+          const found = allRecords.find(
+            d => d.emId === emId || d.id === emId || d.filename === entry.title
+          );
+          if (found && found.types) {
+            Object.entries(found.types).forEach(([type, arr]) => {
+              if (Array.isArray(arr) && arr.length) {
+                allData.push({
+                  type,
+                  rows: arr,
+                  pageNum: arr[0]?.page || 0
+                });
+              }
+            });
+            console.log(`[Instances] ${allData.length} sections chargées depuis control_data`);
+          } else {
+            console.warn("[Instances] Aucune donnée control_data trouvée pour", emId);
+          }
+        }
+
+        // 🔹 Variants pour l’overlay uniquement
+        let variants = [];
+        const variantsSection = allData.find(s => s.type === "variants");
+        if (variantsSection) variants = variantsSection.rows;
+
         await InstancesOverlay.render(entry.file, entry.pageNum, variants);
+
+        // 🔹 Rafraîchir les tableaux UI
+        if (window.UITable && allData.length) {
+          UITable.renderAnalysisTables(allData);
+        }
       } else {
         console.warn("[Instances] PDF non dispo pour EM", emId);
       }
+
 
       if (window.renderResults) renderResults(variants);
     });
@@ -278,6 +312,7 @@ async function refreshPIDSelect() {
 }
 
 // === Populate Instances depuis DB ===
+// === Populate Instances depuis DB ===
 async function populateInstancesSelectFromDB() {
   const emSelect = document.getElementById("instances-em-select");
   if (!emSelect) return;
@@ -286,24 +321,51 @@ async function populateInstancesSelectFromDB() {
   const instances = (docs || []).filter(d => d.type === "instance");
 
   emSelect.innerHTML = "<option value=''>Sélectionnez un EM/EP</option>";
+
   for (const inst of instances) {
     const emId = inst.ref || "0000";
     const title = inst.title || inst.ref || "UNKNOWN";
 
+    // 🔹 Recrée le blob PDF si présent
+    let fileBlob = null;
+    if (inst.pdfData) {
+      try {
+        fileBlob = new Blob([inst.pdfData], { type: "application/pdf" });
+      } catch (err) {
+        console.warn("[Instances] Erreur création blob PDF pour", emId, err);
+      }
+    }
+
+    // 🔹 Charge les variants depuis control_data (pour overlay)
+    let variants = [];
+    if (window.DBService) {
+      const allData = await DBService.getAll("control_data");
+      const found = allData.find(
+        d => d.emId === emId || d.id === emId || d.filename === inst.filename
+      );
+      if (found?.types?.variants) {
+        variants = found.types.variants;
+      }
+    }
+
+    // 🔹 Enregistre dans le cache mémoire
     InstanceService.fileMap.set(emId, {
-      file: inst.pdfBlob || null,
+      file: fileBlob,
       pageNum: inst.pageNum || 1,
-      variants: inst.variants || [],
+      variants,
       title
     });
 
+    // 🔹 Ajoute l'option dans le select
     const opt = document.createElement("option");
     opt.value = emId;
     opt.textContent = `${emId} — ${title}`;
     emSelect.appendChild(opt);
   }
-  console.log("[Instances] Select Instances peuplé au démarrage");
+
+  console.log(`[Instances] Select Instances peuplé au démarrage (${instances.length} entrées)`);
 }
+
 
 // === Hook alertes ===
 function hookDBServiceForAlerts() {

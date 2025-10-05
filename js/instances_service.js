@@ -136,6 +136,7 @@ console.log("[Instances] service chargé (v20)");
     },
 
     // --- Nouvelle API pour recharger un PDF depuis IndexedDB ---
+    // --- Nouvelle API pour recharger un PDF depuis IndexedDB (support pdfBlob ET pdfData) ---
     async loadPdfFromDb(emId) {
       const docId = `instance_${emId}`;
       const doc = await DBService.get("documents", docId);
@@ -143,26 +144,45 @@ console.log("[Instances] service chargé (v20)");
         console.warn("[Instances] Aucun document trouvé pour", emId);
         return null;
       }
-      if (!doc.pdfBlob) {
-        console.warn("[Instances] Pas de pdfBlob stocké pour", emId);
+
+      let fileBlob = null;
+
+      if (doc.pdfBlob instanceof Blob) {
+        // Chemin "Blob natif"
+        fileBlob = doc.pdfBlob;
+      } else if (doc.pdfData) {
+        // Chemin "ArrayBuffer" (fallback universel)
+        try {
+          const buf = doc.pdfData instanceof ArrayBuffer
+            ? doc.pdfData
+            : (doc.pdfData.buffer || new Uint8Array(doc.pdfData).buffer);
+          fileBlob = new Blob([buf], { type: "application/pdf" });
+        } catch (e) {
+          console.error("[Instances] Reconstruction Blob depuis pdfData impossible", e);
+          return null;
+        }
+      } else {
+        console.warn("[Instances] Ni pdfBlob ni pdfData dans le document", docId);
         return null;
       }
 
-      const arrayBuffer = await doc.pdfBlob.arrayBuffer();
-      const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
-
+      // On n’a pas besoin d’ouvrir le PDF ici, on passe juste le Blob à l’overlay
       const fileObj = {
-        file: doc.pdfBlob,
-        pdfData: arrayBuffer,
-        variants: (doc.types && doc.types.variants) || [],
-        pageNum: doc.pageNum,
-        title: doc.title
+        file: fileBlob,
+        pdfData: undefined, // inutile pour le rendu
+        // ⚠️ Les variants ne sont plus dans documents : on les rechargera via control_data côté main.js
+        variants: [],
+        pageNum: doc.pageNum || 1,
+        title: doc.title || doc.ref || emId
       };
 
       this.fileMap.set(emId, fileObj);
-      console.log("[Instances] PDF rechargé depuis IndexedDB pour", emId);
+      console.log("[Instances] PDF rechargé depuis IndexedDB pour", emId, {
+        pageNum: fileObj.pageNum
+      });
       return fileObj;
     }
+
   };
 
   // --- Construction record control_data ---
@@ -239,22 +259,37 @@ console.log("[Instances] service chargé (v20)");
     return out;
   }
 
-  // --- Persistance document (avec pdfBlob) ---
-  async function persistDocument({ emId, title, filename, revision, pageNum, pdfData }) {
-    const docId = `instance_${emId}`;
-    const docRecord = {
-      id: docId,
-      type: "instance",
-      ref: emId,
-      title,
-      filename,
-      revision,
-      pageNum,
-      date: new Date().toISOString(),
-      pdfBlob: new Blob([pdfData], { type: "application/pdf" })
-    };
-    await DBService.put("documents", docRecord);
+  // --- Persistance document (stocke pdfBlob ET pdfData) ---
+async function persistDocument({ emId, title, filename, revision, pageNum, pdfData }) {
+  const docId = `instance_${emId}`;
+
+  // Toujours conserver l'ArrayBuffer (robuste sur tous navigateurs)
+  const record = {
+    id: docId,
+    type: "instance",
+    ref: emId,
+    title,
+    filename,
+    revision,
+    pageNum,
+    date: new Date().toISOString(),
+    pdfData, // <- ArrayBuffer
+  };
+
+  // Et si possible aussi un Blob (évite la conversion lors de la lecture)
+  try {
+    record.pdfBlob = new Blob([pdfData], { type: "application/pdf" });
+  } catch (e) {
+    console.warn("[Instances] Impossible de créer pdfBlob, on garde pdfData uniquement", e);
   }
+
+  await DBService.put("documents", record);
+  console.log("[Instances] Document sauvegardé (documents):", docId, {
+    hasPdfBlob: !!record.pdfBlob,
+    hasPdfData: !!record.pdfData
+  });
+}
+
 
   // --- Détection EM ---
   async function detectEmId(pdf, file) {
