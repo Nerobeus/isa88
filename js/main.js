@@ -1,4 +1,4 @@
-// main.js — Orchestrateur principal (v12 corrigé)
+// main.js — Orchestrateur principal (v13 corrigé)
 console.log("[App] Initialisation");
 
 // Petit helper statut avec auto-clear
@@ -130,11 +130,25 @@ function initPID() {
       const id = pidSelect.value;
       if (!id) return;
       const doc = await DBService.get("documents", id);
-      if (!doc || !doc.pdfData) {
-        console.warn("[PID] Pas de pdfData pour", doc);
+      if (!doc) {
+        console.warn("[PID] Document introuvable pour id", id);
         return;
       }
-      const blob = new Blob([doc.pdfData], { type: "application/pdf" });
+
+      // Lecture robuste PDF (pdfBlob ou pdfData)
+      let blob = null;
+      if (doc.pdfBlob instanceof Blob) blob = doc.pdfBlob;
+      else if (doc.pdfData) {
+        const buf = doc.pdfData instanceof ArrayBuffer
+          ? doc.pdfData
+          : (doc.pdfData.buffer || new Uint8Array(doc.pdfData).buffer);
+        blob = new Blob([buf], { type: "application/pdf" });
+      }
+      if (!blob) {
+        console.warn("[PID] Pas de PDF exploitable pour", doc);
+        return;
+      }
+
       const file = new File([blob], doc.filename, { type: "application/pdf" });
       console.log("[PID] Rechargement depuis DB:", doc.filename);
       await PIDService.importPID(file, { pidNumber: doc.ref, revision: doc.revision });
@@ -159,7 +173,10 @@ function initInstances() {
 
       try {
         if (window.InstanceService?.parseFile) {
+          // reset mémoire
           InstanceService.fileMap.clear();
+
+          // reset select
           if (emSelect) {
             emSelect.innerHTML = "";
             const optDefault = document.createElement("option");
@@ -172,14 +189,35 @@ function initInstances() {
             console.log("[Instances] Import fichier:", file.name);
             const { variants, pageNum, file: pdfFile, em } = await InstanceService.parseFile(file);
 
-            if (em) {
+            if (em && em.id) {
+              // 1) Cache mémoire
               InstanceService.fileMap.set(em.id, { file: pdfFile, variants, pageNum, title: em.title });
 
+              // 2) Ajout immédiat dans le select + auto-select
               if (emSelect) {
                 const opt = document.createElement("option");
                 opt.value = em.id;
                 opt.textContent = `${em.id} — ${em.title}`;
                 emSelect.appendChild(opt);
+                emSelect.value = em.id;
+              }
+
+              // 3) Rendu PDF + tableaux directement après import (sans reload)
+              //    → on recharge control_data pour l'EM
+              if (window.DBService) {
+                const controlData = await DBService.getAll("control_data");
+                const found = controlData.find(d => d.emId === em.id);
+                if (found && found.types) {
+                  const pages = Object.entries(found.types).map(([type, rows]) => ({
+                    type,
+                    rows,
+                    pageNum: rows?.[0]?.page || 0
+                  }));
+                  if (window.UITable) UITable.renderAnalysisTables(pages);
+                }
+              }
+              if (window.InstancesOverlay?.render && pdfFile) {
+                await InstancesOverlay.render(pdfFile, pageNum, variants || []);
               }
             }
           }
@@ -200,79 +238,48 @@ function initInstances() {
       const emId = emSelect.value;
       if (!emId) return;
 
+      // 1) Récup entrée mémoire sinon reload DB
       let entry = InstanceService.fileMap.get(emId);
       if (!entry) {
-        console.log("[Instances] EM non présent en mémoire → tentative reload DB:", emId);
+        console.log("[Instances] EM non en mémoire → reload DB:", emId);
         entry = await InstanceService.loadPdfFromDb(emId);
+        if (entry) InstanceService.fileMap.set(emId, entry);
       }
-      if (!entry) {
+      if (!entry || !entry.file) {
         console.warn("[Instances] PDF introuvable pour EM", emId);
         return;
       }
 
       console.log("[Instances] Changement sélection EM:", emId);
 
-      // 🔹 PATCH overlay variants from control_data (structure imbriquée)
-      let variants = entry.variants || [];
-      if ((!variants || !variants.length) && window.DBService) {
-        const allData = await DBService.getAll("control_data");
-        const found = allData.find(
-          d =>
-            d.emId === emId ||
-            d.id === emId ||
-            d.file === `${emId}.pdf` ||
-            (d.title && d.title.includes(emId))
-        );
-
-        if (found && found.types && found.types.variants) {
-          variants = found.types.variants;
-          console.log(`[Instances] ${variants.length} variants récupérés depuis control_data pour`, emId);
+      // 2) Récup toutes les sections control_data pour tableaux + overlay variants
+      let allData = [];
+      let variantsForOverlay = [];
+      if (window.DBService) {
+        const allRecords = await DBService.getAll("control_data");
+        const found = allRecords.find(d => d.emId === emId);
+        if (found?.types) {
+          allData = Object.entries(found.types).reduce((acc, [type, arr]) => {
+            if (Array.isArray(arr) && arr.length) {
+              acc.push({ type, rows: arr, pageNum: arr[0]?.page || 0 });
+            }
+            return acc;
+          }, []);
+          const vSec = allData.find(s => s.type === "variants");
+          variantsForOverlay = vSec ? vSec.rows : [];
+          console.log(`[Instances] Sections control_data: ${allData.length}, variants: ${variantsForOverlay.length}`);
         } else {
-          console.warn("[Instances] Aucun variants trouvé pour", emId);
+          console.warn("[Instances] Aucune donnée control_data pour", emId);
         }
       }
 
-      if (window.InstancesOverlay?.render && entry.file) {
-        // 🔹 Charger toutes les données (variants + autres) depuis control_data
-        let allData = [];
-        if (window.DBService) {
-          const allRecords = await DBService.getAll("control_data");
-          const found = allRecords.find(
-            d => d.emId === emId || d.id === emId || d.filename === entry.title
-          );
-          if (found && found.types) {
-            Object.entries(found.types).forEach(([type, arr]) => {
-              if (Array.isArray(arr) && arr.length) {
-                allData.push({
-                  type,
-                  rows: arr,
-                  pageNum: arr[0]?.page || 0
-                });
-              }
-            });
-            console.log(`[Instances] ${allData.length} sections chargées depuis control_data`);
-          } else {
-            console.warn("[Instances] Aucune donnée control_data trouvée pour", emId);
-          }
-        }
-
-        // 🔹 Variants pour l’overlay uniquement
-        let variants = [];
-        const variantsSection = allData.find(s => s.type === "variants");
-        if (variantsSection) variants = variantsSection.rows;
-
-        await InstancesOverlay.render(entry.file, entry.pageNum, variants);
-
-        // 🔹 Rafraîchir les tableaux UI
-        if (window.UITable && allData.length) {
-          UITable.renderAnalysisTables(allData);
-        }
-      } else {
-        console.warn("[Instances] PDF non dispo pour EM", emId);
+      // 3) Rendu PDF + overlay + tableaux
+      await InstancesOverlay.render(entry.file, entry.pageNum || 1, variantsForOverlay || []);
+      if (window.UITable && allData.length) {
+        UITable.renderAnalysisTables(allData);
       }
 
-
-      if (window.renderResults) renderResults(variants);
+      if (window.renderResults) renderResults(variantsForOverlay || []);
     });
   }
 }
@@ -312,7 +319,6 @@ async function refreshPIDSelect() {
 }
 
 // === Populate Instances depuis DB ===
-// === Populate Instances depuis DB ===
 async function populateInstancesSelectFromDB() {
   const emSelect = document.getElementById("instances-em-select");
   if (!emSelect) return;
@@ -326,29 +332,32 @@ async function populateInstancesSelectFromDB() {
     const emId = inst.ref || "0000";
     const title = inst.title || inst.ref || "UNKNOWN";
 
-    // 🔹 Recrée le blob PDF si présent
+    // Lecture robuste du PDF
     let fileBlob = null;
-    if (inst.pdfData) {
+    if (inst.pdfBlob instanceof Blob) {
+      fileBlob = inst.pdfBlob;
+    } else if (inst.pdfData) {
       try {
-        fileBlob = new Blob([inst.pdfData], { type: "application/pdf" });
+        const buf = inst.pdfData instanceof ArrayBuffer
+          ? inst.pdfData
+          : (inst.pdfData.buffer || new Uint8Array(inst.pdfData).buffer);
+        fileBlob = new Blob([buf], { type: "application/pdf" });
       } catch (err) {
         console.warn("[Instances] Erreur création blob PDF pour", emId, err);
       }
+    } else {
+      console.warn("[Instances] Aucun PDF trouvé pour", emId, "(ni pdfBlob ni pdfData)");
     }
 
-    // 🔹 Charge les variants depuis control_data (pour overlay)
+    // Variants pour overlay (rechargés via control_data)
     let variants = [];
     if (window.DBService) {
       const allData = await DBService.getAll("control_data");
-      const found = allData.find(
-        d => d.emId === emId || d.id === emId || d.filename === inst.filename
-      );
-      if (found?.types?.variants) {
-        variants = found.types.variants;
-      }
+      const found = allData.find(d => d.emId === emId || d.file === inst.filename || d.title === inst.title);
+      if (found?.types?.variants) variants = found.types.variants;
     }
 
-    // 🔹 Enregistre dans le cache mémoire
+    // Cache mémoire
     InstanceService.fileMap.set(emId, {
       file: fileBlob,
       pageNum: inst.pageNum || 1,
@@ -356,7 +365,7 @@ async function populateInstancesSelectFromDB() {
       title
     });
 
-    // 🔹 Ajoute l'option dans le select
+    // Option du select
     const opt = document.createElement("option");
     opt.value = emId;
     opt.textContent = `${emId} — ${title}`;
@@ -365,7 +374,6 @@ async function populateInstancesSelectFromDB() {
 
   console.log(`[Instances] Select Instances peuplé au démarrage (${instances.length} entrées)`);
 }
-
 
 // === Hook alertes ===
 function hookDBServiceForAlerts() {
